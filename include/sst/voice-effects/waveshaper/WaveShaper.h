@@ -179,8 +179,9 @@ template <typename VFXConfig> struct WaveShaper : core::VoiceEffectTemplateBase<
         }
     }
 
-    void setCoeffsHighpass(float pitch)
+    void wsSetCoeffsHighpass(float pitch)
     {
+        wsDCfilter.template setCoeffForBlock<VFXConfig::blockSize>(sst::filters::CytomicSVF::HP, 20.f, 0.1f, VFXConfig::getSampleRateInv(this), 0.f);
         auto hpParam = this->getFloatParam((int)WaveShaperFloatParams::highpass);
         auto hpFreq =
             440.f * this->note_to_pitch_ignoring_tuning((keytrackOn) ? pitch + hpParam : hpParam);
@@ -197,7 +198,7 @@ template <typename VFXConfig> struct WaveShaper : core::VoiceEffectTemplateBase<
         }
     }
 
-    void setCoeffsLowpass(float pitch)
+    void wsSetCoeffsLowpass(float pitch)
     {
         auto lpParam = this->getFloatParam((int)WaveShaperFloatParams::lowpass);
         auto lpFreq =
@@ -218,6 +219,7 @@ template <typename VFXConfig> struct WaveShaper : core::VoiceEffectTemplateBase<
     void processStereo(float *datainL, float *datainR, float *dataoutL, float *dataoutR,
                        float pitch)
     {
+        wsDCfilter.template retainCoeffForBlock<VFXConfig::blockSize>();
         bool hpActive = this->getIntParam((int)WaveShaperIntParams::hpOn);
         bool lpActive = this->getIntParam((int)WaveShaperIntParams::lpOn);
         namespace mech = sst::basic_blocks::mechanics;
@@ -233,7 +235,7 @@ template <typename VFXConfig> struct WaveShaper : core::VoiceEffectTemplateBase<
 
         if (hpActive)
         {
-            setCoeffsHighpass(pitch);
+            wsSetCoeffsHighpass(pitch);
             filters[0].template processBlock<VFXConfig::blockSize>(datainL, datainR, dataoutL,
                                                                    dataoutR);
         }
@@ -247,14 +249,20 @@ template <typename VFXConfig> struct WaveShaper : core::VoiceEffectTemplateBase<
 
         if (lpActive)
         {
-            setCoeffsLowpass(pitch);
+            wsSetCoeffsLowpass(pitch);
             filters[1].template processBlock<VFXConfig::blockSize>(dataoutL, dataoutR, dataoutL,
                                                                    dataoutR);
+        }
+        if (hpActive)
+        {
+            wsDCfilter.template processBlock<VFXConfig::blockSize>(dataoutL, dataoutR, dataoutL,
+                                                                  dataoutR);
         }
     }
 
     void processMonoToMono(float *datainL, float *dataoutL, float pitch)
     {
+        wsDCfilter.template retainCoeffForBlock<VFXConfig::blockSize>();
         bool hpActive = this->getIntParam((int)WaveShaperIntParams::hpOn);
         bool lpActive = this->getIntParam((int)WaveShaperIntParams::lpOn);
         namespace mech = sst::basic_blocks::mechanics;
@@ -269,7 +277,7 @@ template <typename VFXConfig> struct WaveShaper : core::VoiceEffectTemplateBase<
 
         if (hpActive)
         {
-            setCoeffsHighpass(pitch);
+            wsSetCoeffsHighpass(pitch);
             filters[0].template processBlock<VFXConfig::blockSize>(dataoutL, dataoutL);
         }
         else
@@ -281,8 +289,12 @@ template <typename VFXConfig> struct WaveShaper : core::VoiceEffectTemplateBase<
 
         if (lpActive)
         {
-            setCoeffsLowpass(pitch);
+            wsSetCoeffsLowpass(pitch);
             filters[1].template processBlock<VFXConfig::blockSize>(dataoutL, dataoutL);
+        }
+        if (hpActive)
+        {
+            wsDCfilter.template processBlock<VFXConfig::blockSize>(dataoutL, dataoutL);
         }
     }
 
@@ -323,6 +335,7 @@ template <typename VFXConfig> struct WaveShaper : core::VoiceEffectTemplateBase<
     sst::basic_blocks::dsp::lipol<float, VFXConfig::blockSize, true> mDriveLerp, mBiasLerp,
         mGainLerp;
     std::array<sst::filters::CytomicSVF, 2> filters;
+    filters::CytomicSVF wsDCfilter;
 };
 } // namespace sst::voice_effects::waveshaper
 
