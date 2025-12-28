@@ -381,7 +381,6 @@ fxdata->p[ph_mod_rate].deactivated = false;
     // depth span
     float legacy_freq[4] = {1.5 / 12, 19.5 / 12, 35 / 12, 50 / 12};
     float legacy_span[4] = {2.0, 1.5, 1.0, 0.5};
-    bool legacy_stereo{false};
 
     sst::basic_blocks::modulators::FXModControl<FXConfig::blockSize> modLFO;
 
@@ -393,15 +392,12 @@ fxdata->p[ph_mod_rate].deactivated = false;
         // 1->2 reordered mod waves and added actual saw (renamed "saw" to ramp)
         if (streamedFrom < 2)
         {
-            // cubed the stereo control
-            auto p = param[ph_stereo];
-            param[ph_stereo] = std::cbrt(p);
-            legacy_stereo = true;
-
             if (param[ph_mod_wave] == 3 || param[ph_mod_wave] == 4)
             {
                 // noise and snh were 3/4, are now 5/6
                 param[ph_mod_wave] += 2;
+                // and stereo could not be reduced, but now can
+                param[ph_stereo] = 1.f;
             }
             else if (param[ph_mod_wave] == 5)
             {
