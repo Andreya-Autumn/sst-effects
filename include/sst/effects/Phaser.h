@@ -22,6 +22,7 @@
 #define INCLUDE_SST_EFFECTS_PHASER_H
 
 #include <cstring>
+#include <cmath>
 #include "EffectCore.h"
 #include "sst/basic-blocks/params/ParamMetadata.h"
 #include "sst/basic-blocks/dsp/Lag.h"
@@ -107,7 +108,6 @@ template <typename FXConfig> struct Phaser : core::EffectTemplateBase<FXConfig>
         mix.instantize();
 
         modLFO.setSampleRate(this->sampleRate());
-
     }
 
     ~Phaser()
@@ -193,7 +193,7 @@ template <typename FXConfig> struct Phaser : core::EffectTemplateBase<FXConfig>
         }
         else
         {
-            modLFO.processStartOfBlock(mwave, rate, depth, 0.f,  stereo);
+            modLFO.processStartOfBlock(mwave, rate, depth, 0.f, stereo);
         }
 
         auto lfoVals = modLFO.valueStereo();
@@ -204,13 +204,11 @@ template <typename FXConfig> struct Phaser : core::EffectTemplateBase<FXConfig>
             // 4 stages in original phaser mode
             for (int i = 0; i < 2; i++)
             {
-                double omega =
-                    biquad[2 * i]->calc_omega(2 * this->floatValue(ph_center) + legacy_freq[i] +
-                                              legacy_span[i] * lfoVals[0]);
+                double omega = biquad[2 * i]->calc_omega(
+                    2 * this->floatValue(ph_center) + legacy_freq[i] + legacy_span[i] * lfoVals[0]);
                 biquad[2 * i]->coeff_APF(omega, 1.0 + 0.8 * this->floatValue(ph_sharpness));
-                omega =
-                    biquad[2 * i + 1]->calc_omega(2 * this->floatValue(ph_center) + legacy_freq[i] +
-                                                  legacy_span[i] * lfoVals[1]);
+                omega = biquad[2 * i + 1]->calc_omega(2 * this->floatValue(ph_center) +
+                                                      legacy_freq[i] + legacy_span[i] * lfoVals[1]);
                 biquad[2 * i + 1]->coeff_APF(omega, 1.0 + 0.8 * this->floatValue(ph_sharpness));
             }
         }
@@ -347,13 +345,16 @@ fxdata->p[ph_mod_rate].deactivated = false;
             return pmd()
                 .asInt()
                 .withName("Waveform")
-                .withRange(0, 5)
-                .withUnorderedMapFormatting({{0, "Sine"},
-                                             {1, "Triangle"},
-                                             {2, "Saw"},
-                                             {3, "Noise"},
-                                             {4, "Sample & Hold"},
-                                             {5, "Square"}})
+                .withRange(0, 6)
+                .withUnorderedMapFormatting({
+                    {0, "Sine"},
+                    {1, "Triangle"},
+                    {2, "Ramp"},
+                    {3, "Saw"},
+                    {4, "Square"},
+                    {5, "Noise"},
+                    {6, "Sample & Hold"},
+                })
                 .withDefault(0);
         default:
             break;
@@ -380,16 +381,34 @@ fxdata->p[ph_mod_rate].deactivated = false;
     // depth span
     float legacy_freq[4] = {1.5 / 12, 19.5 / 12, 35 / 12, 50 / 12};
     float legacy_span[4] = {2.0, 1.5, 1.0, 0.5};
+    bool legacy_stereo{false};
 
     sst::basic_blocks::modulators::FXModControl<FXConfig::blockSize> modLFO;
 
   public:
-    static constexpr int16_t streamingVersion{1};
+    static constexpr int16_t streamingVersion{2};
     static void remapParametersForStreamingVersion(int16_t streamedFrom, float *const param)
     {
-        // base implementation - we have never updated streaming
-        // input is parameters from stream version
-        assert(streamedFrom == 1);
+        assert(streamedFrom <= streamingVersion);
+        // 1->2 reordered mod waves and added actual saw (renamed "saw" to ramp)
+        if (streamedFrom < 2)
+        {
+            // cubed the stereo control
+            auto p = param[ph_stereo];
+            param[ph_stereo] = std::cbrt(p);
+            legacy_stereo = true;
+
+            if (param[ph_mod_wave] == 3 || param[ph_mod_wave] == 4)
+            {
+                // noise and snh were 3/4, are now 5/6
+                param[ph_mod_wave] += 2;
+            }
+            else if (param[ph_mod_wave] == 5)
+            {
+                // square was 5, is now 4
+                param[ph_mod_wave] -= 1;
+            }
+        }
     }
 };
 } // namespace sst::effects::phaser
